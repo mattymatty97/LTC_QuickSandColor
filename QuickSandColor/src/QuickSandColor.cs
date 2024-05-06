@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -14,6 +15,7 @@ namespace QuickSandColor
     [HarmonyPatch]
     [BepInPlugin(GUID, NAME, VERSION)]
     [BepInDependency("BMX.LobbyCompatibility", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency("ainavt.lc.lethalconfig", BepInDependency.DependencyFlags.SoftDependency)]
     internal class QuickSandColor : BaseUnityPlugin
     {
         internal static QuickSandColor INSTANCE;
@@ -32,8 +34,8 @@ namespace QuickSandColor
             Log = Logger;
             try
             {
-                if (LobbyCompatibilityChecker.Enabled)
-                    LobbyCompatibilityChecker.Init();
+                if (LobbyCompatibilityProxy.Enabled)
+                    LobbyCompatibilityProxy.Init();
                 
                 Log.LogInfo("Patching Methods");
                 var harmony = new Harmony(GUID);
@@ -45,6 +47,9 @@ namespace QuickSandColor
                 colorSetting.SettingChanged += OnConfigChange;
                 
                 ColorMap.Add("default", colorSetting);
+                
+                if (LethalConfigProxy.Enabled)
+                    LethalConfigProxy.AddConfig(colorSetting);
                 
                 
                 if (!ColorUtility.TryParseHtmlString(colorSetting.Value, out _))
@@ -60,6 +65,14 @@ namespace QuickSandColor
 
         internal static bool GetOrAddMoon(string source, string name, out Color color)
         {
+            name = Regex.Replace(name, @"[^\w\. @-]", "", RegexOptions.None);
+
+            if (name.IsNullOrWhiteSpace())
+            {
+                color = Color.clear;
+                return false;
+            }
+
             var entryName = $"{source}.{name}";
             if (!ColorMap.TryGetValue(entryName, out var configEntry))
             {
@@ -69,6 +82,9 @@ namespace QuickSandColor
                 configEntry.SettingChanged += OnConfigChange;
                 
                 ColorMap.Add(entryName, configEntry);
+                
+                if (LethalConfigProxy.Enabled)
+                    LethalConfigProxy.AddConfig(configEntry);
             }
             
             var colorString = ColorMap["default"].Value;
@@ -82,7 +98,7 @@ namespace QuickSandColor
                 
             Log.LogFatal($"Color value for moon '{entryName}' ('{colorString}') cannot be parsed");
 
-            color = new Color();
+            color = Color.clear;
             return false;
         }
 
@@ -128,9 +144,6 @@ namespace QuickSandColor
             {
                 foreach (SelectableLevel level in __instance.levels)
                 {
-                    if (level.PlanetName.IsNullOrWhiteSpace())
-                        continue;
-                    
                     GetOrAddMoon("Moons", level.PlanetName, out _);
                 }
             }
